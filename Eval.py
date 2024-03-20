@@ -109,8 +109,6 @@ def evaluate(pred_path, gt_path, verbose = True):
             Smeasure[i] = StructureMeasure(pred_mask, gt_mask)
             wFmeasure[i] = original_WFb(pred_mask, gt_mask)
             MAE[i] = np.mean(np.abs(gt_mask - pred_mask))
-            b_iou=boundary_iou(gt_mask,pred_mask)
-            mb_iou=b_iou+mb_iou
             threshold_E = np.zeros(len(Thresholds))
             threshold_F = np.zeros(len(Thresholds))
             threshold_Pr = np.zeros(len(Thresholds))
@@ -133,8 +131,6 @@ def evaluate(pred_path, gt_path, verbose = True):
             threshold_IoU[i, :] = threshold_Iou
 
         result = []
-        mb_iou=mb_iou/len(preds)
-        print(mb_iou)
         mae = np.mean(MAE)
         Sm = np.mean(Smeasure)
         wFm = np.mean(wFmeasure)
