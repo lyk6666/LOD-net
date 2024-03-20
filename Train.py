@@ -144,7 +144,7 @@ def train(train_loader, model, optimizer, epoch, test_path):
     save_path = (opt.train_save)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    torch.save(model.state_dict(), save_path +str(epoch)+ 'PolypPVT.pth')
+    torch.save(model.state_dict(), save_path +str(epoch)+ 'LOD-net.pth')
     # choose the best model
 
     global dict_plot
@@ -161,8 +161,8 @@ def train(train_loader, model, optimizer, epoch, test_path):
         dict_plot['test'].append(meandice)
         if meandice > best:
             best = meandice
-            torch.save(model.state_dict(), save_path + 'PolypPVT.pth')
-            torch.save(model.state_dict(), save_path +str(epoch)+ 'PolypPVT-best.pth')
+            torch.save(model.state_dict(), save_path + 'LOD-net.pth')
+            torch.save(model.state_dict(), save_path +str(epoch)+ 'LOD-net-best.pth')
             print('##############################################################################best', best)
             logging.info('##############################################################################best:{}'.format(best))
 
@@ -186,7 +186,7 @@ if __name__ == '__main__':
     dict_plot = {'CVC-300':[], 'CVC-ClinicDB':[], 'Kvasir':[], 'CVC-ColonDB':[], 'ETIS-LaribPolypDB':[], 'test':[]}
     name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
     ##################model_name#############################
-    model_name = 'PolypPVT'
+    model_name = 'LOD-net'
     ###############################################
     parser = argparse.ArgumentParser()
 
