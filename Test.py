@@ -11,7 +11,7 @@ import cv2
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--testsize', type=int, default=352, help='testing size')
-    parser.add_argument('--pth_path', type=str, default="/root/share/LiYuKe/Polyp-PVT-main/model_pth/59PolypPVT.pth")
+    parser.add_argument('--pth_path', type=str, default="model_pth/LOD-net.pth")
     opt = parser.parse_args()
     model = PolypPVT()
     model=DataParallel(model,device_ids=[0,1,2])
@@ -23,7 +23,7 @@ if __name__ == '__main__':
         ##### put data_path here #####
         data_path = './dataset/TestDataset/{}'.format(_data_name)
         ##### save_path #####
-        save_path = './result_map/PolypPVT/{}/'.format(_data_name)
+        save_path = './result_map/LOD-net/{}/'.format(_data_name)
 
         if not os.path.exists(save_path):
             os.makedirs(save_path)
