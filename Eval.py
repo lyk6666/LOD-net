@@ -195,6 +195,6 @@ def evaluate(pred_path, gt_path, verbose = True):
 if __name__ == "__main__":
     # args = _args()
     # opt = load_config(args.config)
-    pred_root = "result_map/PolypPVT"
+    pred_root = "result_map/LOD-net"
     gt_root = "dataset/TestDataset/"
     evaluate(pred_root, gt_root)
