@@ -12,6 +12,7 @@ import logging
 from torch.nn.parallel import DataParallel
 import matplotlib.pyplot as plt
 
+
 def structure_loss(pred, mask):
     weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
     wbce = F.binary_cross_entropy_with_logits(pred, mask, reduce='none')
@@ -23,23 +24,26 @@ def structure_loss(pred, mask):
     wiou = 1 - (inter + 1) / (union - inter + 1)
 
     return (wbce + wiou).mean()
-def mask_reference_point( H, W, device):
+
+
+def mask_reference_point(H, W, device):
     ref_x, ref_y = torch.meshgrid(torch.linspace(0, H - 1, H, dtype=torch.float32, device=device),
-                                      torch.linspace(0, W - 1, W, dtype=torch.float32, device=device))
+                                  torch.linspace(0, W - 1, W, dtype=torch.float32, device=device))
     ref = torch.cat((ref_y[..., None], ref_x[..., None]), -1)
     return ref
 
+
 def oriented_derivative_learning(features, gt_masks):
-    features = F.interpolate(features, scale_factor=8, mode='bilinear') 
+    features = F.interpolate(features, scale_factor=8, mode='bilinear')
     N, C, H, W = gt_masks.shape
-    direction_nums =8
+    direction_nums = 8
     features_after_sample = features.new_zeros((N, direction_nums, H, W))
     grids = mask_reference_point(H, W, device=features.device)
     grids = grids[None, :, :, :, None]
     grids = grids.repeat(N, 1, 1, 1, direction_nums)
 
     grids_offsets = torch.tensor([[-1, -1, -1, 0, 1, 1, 1, 0], [-1, 0, 1, 1, 1, 0, -1, -1]], dtype=features.dtype,
-                                     device=features.device)
+                                 device=features.device)
     grids_offsets = grids_offsets.repeat(N, H, W, 1, 1)
     offsets = grids_offsets
     grids = grids + offsets
@@ -47,9 +51,9 @@ def oriented_derivative_learning(features, gt_masks):
     inputs = gt_masks
     for num in range(direction_nums):
         per_direction_grids = grids[:, :, :, :, num]
-        per_direction_grids=per_direction_grids*2/(H-1)-1
+        per_direction_grids = per_direction_grids * 2 / (H - 1) - 1
         features_after_sample[:, num:num + 1, :, :] = F.grid_sample(inputs, per_direction_grids, mode='bilinear',
-                                                                        align_corners=False, padding_mode='border')
+                                                                    align_corners=False, padding_mode='border')
 
     extend_gt_masks = gt_masks.repeat(1, direction_nums, 1, 1)
 
@@ -58,17 +62,19 @@ def oriented_derivative_learning(features, gt_masks):
     for num in range(direction_nums):
         offset = offsets[:, :, :, :, num]
         dis = torch.rsqrt(
-            torch.square(offset[:, :, :, 0]) + torch.square(offset[:, :, :, 1]) + torch.full(offset[:, :, :, 0].shape,1e-5,device=offset[:,:,:,0].device))
+            torch.square(offset[:, :, :, 0]) + torch.square(offset[:, :, :, 1]) + torch.full(offset[:, :, :, 0].shape,
+                                                                                             1e-5,
+                                                                                             device=offset[:, :, :,
+                                                                                                    0].device))
         dis = dis[:, None, :, :]
         oriented_gt[:, num:num + 1, :, :] = (extend_gt_masks[:, num:num + 1, :, :] + 1e-5).mul(dis)
 
-
-    od_loss = F.smooth_l1_loss(features, oriented_gt , reduction="mean")
+    od_loss = F.smooth_l1_loss(features, oriented_gt, reduction="mean")
 
     return od_loss
 
-def test(model, path, dataset):
 
+def test(model, path, dataset):
     data_path = os.path.join(path, dataset)
     image_root = '{}/images/'.format(data_path)
     gt_root = '{}/masks/'.format(data_path)
@@ -82,9 +88,9 @@ def test(model, path, dataset):
         gt /= (gt.max() + 1e-8)
         image = image.cuda()
 
-        res, res1,_  = model(image)
+        res, res1, _ = model(image)
         # eval Dice
-        res = F.upsample(res + res1 , size=gt.shape, mode='bilinear', align_corners=False)
+        res = F.upsample(res + res1, size=gt.shape, mode='bilinear', align_corners=False)
         res = res.sigmoid().data.cpu().numpy().squeeze()
         res = (res - res.min()) / (res.max() - res.min() + 1e-8)
         input = res
@@ -102,11 +108,10 @@ def test(model, path, dataset):
     return DSC / num1
 
 
-
 def train(train_loader, model, optimizer, epoch, test_path):
     model.train()
     global best
-    size_rates = [0.75, 1, 1.25] 
+    size_rates = [0.75, 1, 1.25]
     loss_P2_record = AvgMeter()
     for i, pack in enumerate(train_loader, start=1):
         for rate in size_rates:
@@ -121,12 +126,12 @@ def train(train_loader, model, optimizer, epoch, test_path):
                 images = F.upsample(images, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
                 gts = F.upsample(gts, size=(trainsize, trainsize), mode='bilinear', align_corners=True)
             # ---- forward ----
-            P1, P2,pred_od= model(images)
+            P1, P2, pred_od = model(images)
             # ---- loss function ----
             loss_P1 = structure_loss(P1, gts)
             loss_P2 = structure_loss(P2, gts)
-            loss_od=oriented_derivative_learning(pred_od,gts)
-            loss = loss_P1 + loss_P2+loss_od 
+            loss_od = oriented_derivative_learning(pred_od, gts)
+            loss = loss_P1 + loss_P2 + loss_od
             # ---- backward ----
             loss.backward()
             clip_gradient(optimizer, opt.clip)
@@ -144,17 +149,17 @@ def train(train_loader, model, optimizer, epoch, test_path):
     save_path = (opt.train_save)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
-    torch.save(model.state_dict(), save_path +str(epoch)+ 'LOD-net.pth')
+    torch.save(model.state_dict(), save_path + str(epoch) + 'LOD-net.pth')
     # choose the best model
 
     global dict_plot
-   
+
     test1path = './dataset/TestDataset/'
     if (epoch + 1) % 1 == 0:
         for dataset in ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB']:
             dataset_dice = test(model, test1path, dataset)
             logging.info('epoch: {}, dataset: {}, dice: {}'.format(epoch, dataset, dataset_dice))
-            if dataset=='CVC-300' or dataset=='CVC-ClinicDB':
+            if dataset == 'CVC-300' or dataset == 'CVC-ClinicDB':
                 print(dataset, ': ', dataset_dice)
             dict_plot[dataset].append(dataset_dice)
         meandice = test(model, test_path, 'test')
@@ -162,17 +167,19 @@ def train(train_loader, model, optimizer, epoch, test_path):
         if meandice > best:
             best = meandice
             torch.save(model.state_dict(), save_path + 'LOD-net.pth')
-            torch.save(model.state_dict(), save_path +str(epoch)+ 'LOD-net-best.pth')
+            torch.save(model.state_dict(), save_path + str(epoch) + 'LOD-net-best.pth')
             print('##############################################################################best', best)
-            logging.info('##############################################################################best:{}'.format(best))
+            logging.info(
+                '##############################################################################best:{}'.format(best))
 
 
-def plot_train(dict_plot=None, name = None):
+def plot_train(dict_plot=None, name=None):
     color = ['red', 'lawngreen', 'lime', 'gold', 'm', 'plum', 'blue']
     line = ['-', "--"]
     for i in range(len(name)):
         plt.plot(dict_plot[name[i]], label=name[i], color=color[i], linestyle=line[(i + 1) % 2])
-        transfuse = {'CVC-300': 0.902, 'CVC-ClinicDB': 0.918, 'Kvasir': 0.918, 'CVC-ColonDB': 0.773,'ETIS-LaribPolypDB': 0.733, 'test':0.83}
+        transfuse = {'CVC-300': 0.902, 'CVC-ClinicDB': 0.918, 'Kvasir': 0.918, 'CVC-ColonDB': 0.773,
+                     'ETIS-LaribPolypDB': 0.733, 'test': 0.83}
         plt.axhline(y=transfuse[name[i]], color=color[i], linestyle='-')
     plt.xlabel("epoch")
     plt.ylabel("dice")
@@ -180,10 +187,11 @@ def plot_train(dict_plot=None, name = None):
     plt.legend()
     plt.savefig('eval.png')
     # plt.show()
-    
-    
+
+
 if __name__ == '__main__':
-    dict_plot = {'CVC-300':[], 'CVC-ClinicDB':[], 'Kvasir':[], 'CVC-ColonDB':[], 'ETIS-LaribPolypDB':[], 'test':[]}
+    dict_plot = {'CVC-300': [], 'CVC-ClinicDB': [], 'Kvasir': [], 'CVC-ColonDB': [], 'ETIS-LaribPolypDB': [],
+                 'test': []}
     name = ['CVC-300', 'CVC-ClinicDB', 'Kvasir', 'CVC-ColonDB', 'ETIS-LaribPolypDB', 'test']
     ##################model_name#############################
     model_name = 'LOD-net'
@@ -226,7 +234,7 @@ if __name__ == '__main__':
                         help='path to testing Kvasir dataset')
 
     parser.add_argument('--train_save', type=str,
-                        default='./model_pth/'+model_name+'/')
+                        default='./model_pth/' + model_name + '/')
 
     opt = parser.parse_args()
     logging.basicConfig(filename='train_log.log',
@@ -236,7 +244,7 @@ if __name__ == '__main__':
     # ---- build models ----
     # torch.cuda.set_device(0)  # set your gpu device
     model = PolypPVT().cuda()
-    model=DataParallel(model,device_ids=[0,1,2])
+    model = DataParallel(model, device_ids=[0, 1, 2])
     best = 0
 
     params = model.parameters()
@@ -259,6 +267,6 @@ if __name__ == '__main__':
     for epoch in range(1, opt.epoch):
         adjust_lr(optimizer, opt.lr, epoch, 0.1, 200)
         train(train_loader, model, optimizer, epoch, opt.test_path)
-    
+
     # plot the eval.png in the training stage
     # plot_train(dict_plot, name)
