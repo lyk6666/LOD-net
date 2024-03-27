@@ -8,17 +8,19 @@ import cv2
 import torchvision.transforms as transforms
 
 import math
+
+
 class LODBorderHead(nn.Module):
     """
     A head for Oriented derivatives learning, adaptive thresholding and feature fusion.
     """
 
-    def __init__(self,input_channels):
+    def __init__(self, input_channels):
 
         super(LODBorderHead, self).__init__()
-       # self.input_channels = input_shape.channels
-        self.input_channels =input_channels
-        self.num_directions =8
+        # self.input_channels = input_shape.channels
+        self.input_channels = input_channels
+        self.num_directions = 8
         self.num_classes = 1
 
         self.conv_norm_relus = []
@@ -106,7 +108,7 @@ class LODBorderHead(nn.Module):
             ),
             nn.ReLU(),
             Conv2d(cur_channels, self.num_directions * 2, kernel_size=3, padding=1, stride=2),
-            Conv2d(self.num_directions*2, 1, kernel_size=3, padding=1, stride=2),
+            Conv2d(self.num_directions * 2, 1, kernel_size=3, padding=1, stride=2),
         )
 
         self.predictor = Conv2d(64, self.num_classes, kernel_size=1, stride=1, padding=0)
@@ -145,42 +147,23 @@ class LODBorderHead(nn.Module):
         if self.predictor.bias is not None:
             nn.init.constant_(self.predictor.bias, 0)
 
-    def forward(self, features,mask_logits,ATT):
-        points_num=50
+    def forward(self, features, mask_logits, challenging_to_discriminate_region_map):
         pred_od = self.layers(features)
-        #pred_od= F.interpolate(pred_od, scale_factor=0.25, mode='bilinear') 
-        N,C,W,H=pred_od.shape
-        sum_od=torch.zeros([N,1,W,H],device=pred_od.device)
+        N, C, W, H = pred_od.shape
+        proposal_boundary_region_map = torch.zeros([N, 1, W, H], device=pred_od.device)
         for i in range(N):
-          for num in range(8):
-            sum_od[i,:,:,:]=sum_od[i,:,:,:]+pred_od[i,num,:,:].abs()  
-        ATT_od=ATT*sum_od
-        #od_activated_map = self.adaptive_thresholding(points_num, ATT_od)
-        border_mask_logits = self.boundary_aware_mask_scoring(mask_logits, ATT_od, pred_od)
-        return border_mask_logits,pred_od
+            for num in range(8):
+                proposal_boundary_region_map[i, :, :, :] =  proposal_boundary_region_map[i, :, :, :] + pred_od[i, num, :, :].abs()
+        Hard_region_aware_map = challenging_to_discriminate_region_map *  proposal_boundary_region_map
+        border_mask_logits = self.boundary_aware_mask_scoring(mask_logits, Hard_region_aware_map, pred_od)
+        return border_mask_logits, pred_od
 
-
-    def boundary_aware_mask_scoring(self, mask_logits, od_activated_map, pred_od):
-        od_activated_map=od_activated_map.abs()
-        od_activated_map=(od_activated_map-od_activated_map.min())/(od_activated_map.max()-od_activated_map.min()+1e-10)
+    def boundary_aware_mask_scoring(self, mask_logits, Hard_region_aware_map, pred_od):
+        Hard_region_aware_map = Hard_region_aware_map.abs()
+        Hard_region_aware_map = (Hard_region_aware_map - Hard_region_aware_map.min()) / (
+                Hard_region_aware_map.max() - Hard_region_aware_map.min() + 1e-10)
         od_features = self.outputs_conv(pred_od)
-        #od_activated_map = od_activated_map.unsqueeze(dim=1)
         mask_fusion_scores = mask_logits + od_features
-        border_mask_scores = (1-od_activated_map) * mask_logits + od_activated_map * mask_fusion_scores
+        border_mask_scores = (1 - Hard_region_aware_map) * mask_logits + Hard_region_aware_map * mask_fusion_scores
         return border_mask_scores
 
-
-    def adaptive_thresholding(self, points_num, od_features):
-        od_features=od_features.abs()
-        N, C, H, W = od_features.shape
-        
-        res=(od_features-od_features.min())/(od_features.max()-od_features.min()+1e-10)
-        activated_map=res>0.1
-       # od_features=od_features.view(N,H*W)
-        #_, idxx = torch.topk(od_features, points_num)
-        #shift = H * W * torch.arange(N, dtype=torch.long, device=idxx.device)
-        #idxx += shift[:, None]
-        #activated_map = torch.zeros([N, H * W], dtype=torch.bool, device=od_features.device)
-        #activated_map.view(-1)[idxx.view(-1)] = True
-    
-        return activated_map.view(N, H, W)
