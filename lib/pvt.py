@@ -9,6 +9,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+
 class BasicConv2d(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, stride=1, padding=0, dilation=1):
         super(BasicConv2d, self).__init__()
@@ -56,8 +57,6 @@ class CFM(nn.Module):
         x1 = self.conv4(x3_2)
 
         return x1
-
-
 
 
 class GCN(nn.Module):
@@ -125,9 +124,9 @@ class ChannelAttention(nn.Module):
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
 
-        self.fc1   = nn.Conv2d(in_planes, in_planes // 16, 1, bias=False)
+        self.fc1 = nn.Conv2d(in_planes, in_planes // 16, 1, bias=False)
         self.relu1 = nn.ReLU()
-        self.fc2   = nn.Conv2d(in_planes // 16, in_planes, 1, bias=False)
+        self.fc2 = nn.Conv2d(in_planes // 16, in_planes, 1, bias=False)
 
         self.sigmoid = nn.Sigmoid()
 
@@ -177,50 +176,40 @@ class PolypPVT(nn.Module):
         self.ca = ChannelAttention(64)
         self.sa = SpatialAttention()
         self.SAM = SAM()
-        self.lod=lod_head(32)
-        
+        self.lod = lod_head(32)
+
         self.down05 = nn.Upsample(scale_factor=0.5, mode='bilinear', align_corners=True)
         self.out_SAM = nn.Conv2d(channel, 1, 1)
         self.out_CFM = nn.Conv2d(channel, 1, 1)
 
     def forward(self, x):
-
         # backbone
         pvt = self.backbone(x)
         x1 = pvt[0]
         x2 = pvt[1]
         x3 = pvt[2]
         x4 = pvt[3]
-        
+
         # CIM
-        x1 = self.ca(x1) * x1 # channel attention
-        cim_feature = self.sa(x1) * x1 # spatial attention
-        
+        x1 = self.ca(x1) * x1  # channel attention
+        cim_feature = self.sa(x1) * x1  # spatial attention
+
         # CFM
-        x2_t = self.Translayer2_1(x2)  
-        x3_t = self.Translayer3_1(x3)  
-        x4_t = self.Translayer4_1(x4)  
+        x2_t = self.Translayer2_1(x2)
+        x3_t = self.Translayer3_1(x3)
+        x4_t = self.Translayer4_1(x4)
         cfm_feature = self.CFM(x4_t, x3_t, x2_t)
-        
+
         # SAM
         T2 = self.Translayer2_0(cim_feature)
         T2 = self.down05(T2)
         sam_feature = self.SAM(cfm_feature, T2)
-        
+
         prediction1 = self.out_CFM(cfm_feature)
-        K=F.sigmoid(prediction1)
-        ATT=1-torch.cos(2*np.pi*K)
-        sam_feature,pred_od=self.lod(cfm_feature,sam_feature,ATT)
+        Hard_region_aware_map = 1 - torch.cos(2 * np.pi * F.sigmoid(prediction1))
+        sam_feature, pred_od = self.lod(cfm_feature, sam_feature, Hard_region_aware_map)
         prediction2 = self.out_SAM(sam_feature)
-        
-        prediction1_8 = F.interpolate(prediction1, scale_factor=8, mode='bilinear') 
-        prediction2_8 = F.interpolate(prediction2, scale_factor=8, mode='bilinear')  
-        return prediction1_8, prediction2_8,pred_od
 
-
-if __name__ == '__main__':
-    model = PolypPVT().cuda()
-    input_tensor = torch.randn(1, 3, 352, 352).cuda()
-
-    prediction1, prediction2 = model(input_tensor)
-    print(prediction1.size(), prediction2.size())
+        prediction1_8 = F.interpolate(prediction1, scale_factor=8, mode='bilinear')
+        prediction2_8 = F.interpolate(prediction2, scale_factor=8, mode='bilinear')
+        return prediction1_8, prediction2_8, pred_od
